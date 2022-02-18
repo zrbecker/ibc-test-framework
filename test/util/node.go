@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/ory/dockertest"
-	"github.com/ory/dockertest/docker"
+	"github.com/avast/retry-go"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
 var (
 	NODE_LABEL_KEY = "ibc-test"
+	VALIDATOR_KEY  = "validator"
 )
 
 type Node struct {
@@ -55,42 +55,44 @@ func (n *Node) HomeDir() string {
 	return filepath.Join("/home", n.ContainerConfig.Bin)
 }
 
-func (n *Node) Initialize(ctx context.Context) error {
-	command := []string{n.ContainerConfig.Bin, "init", n.Name(),
-		"--chain-id", n.R.ChainId,
-		"--home", n.HomeDir(),
+// Keybase returns the keyring for a given node
+func (n *Node) Keybase() (keyring.Keyring, error) {
+	kr, err := keyring.New("", keyring.BackendTest, n.HostHomeDir(), os.Stdin)
+	if err != nil {
+		return nil, err
 	}
-	return n.Execute(ctx, command)
+	return kr, nil
 }
 
-func (n *Node) Execute(ctx context.Context, cmd []string) error {
-	// TODO(zrbecker): Should a container have a name and hostname? And should it be random?
-	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
-
-	resource, err := n.R.Pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   n.ContainerConfig.Repository,
-		Tag:          n.ContainerConfig.Version,
-		ExposedPorts: n.ContainerConfig.Ports,
-		Cmd:          cmd,
-		Labels:       map[string]string{NODE_LABEL_KEY: n.R.T.Name()},
-	}, func(config *docker.HostConfig) {
-		config.Binds = []string{
-			fmt.Sprintf("%s:%s", n.HostHomeDir(), n.HomeDir()),
+// GetKey gets a key, waiting until it is available
+func (n *Node) GetKey(name string) (info keyring.Info, err error) {
+	return info, retry.Do(func() (err error) {
+		kr, err := n.Keybase()
+		if err != nil {
+			return err
 		}
-		config.PublishAllPorts = true
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		info, err = kr.Key(name)
+		return err
 	})
-	if err != nil {
+}
+
+func (n *Node) Initialize(ctx context.Context) error {
+	if err := n.InitHomeFolder(ctx); err != nil {
 		return err
 	}
 
-	code, err := n.R.Pool.Client.WaitContainerWithContext(resource.Container.ID, ctx)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return fmt.Errorf("container returned non-zero error code: %d", code)
+	if n.IsValidator {
+		if err := n.CreateKey(ctx, VALIDATOR_KEY); err != nil {
+			return err
+		}
+		key, err := n.GetKey(VALIDATOR_KEY)
+		if err != nil {
+			return err
+		}
+		if err := n.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+			return err
+		}
+		return n.Gentx(ctx, VALIDATOR_KEY)
 	}
 
 	return nil
