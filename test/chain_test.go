@@ -2,7 +2,6 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/strangelove-ventures/ibc-test-framework/test/util"
@@ -13,17 +12,24 @@ func TestRun(t *testing.T) {
 	ctx := context.Background()
 
 	r, err := util.NewChainRunner(t, ctx, "ibc-test")
-	assert.NoError(t, err, "Error while initializing ChainRunner")
+	if !assert.NoError(t, err, "Error while initializing ChainRunner") {
+		return
+	}
 
-	numNodes := 3
-	for i := 0; i < numNodes; i += 1 {
-		err := r.AddNode(&util.GaiaContainerConfig)
-		if err != nil {
-			assert.NoError(t, err, fmt.Sprintf("Error adding node %d", i))
+	numValidators := 3
+	for i := 0; i < numValidators; i += 1 {
+		err := r.AddNode(&util.GaiaContainerConfig, true)
+		if !assert.NoError(t, err, "Error adding node %d", i) {
+			return
 		}
 	}
-	r.AddNode(&util.GaiaContainerConfig)
-	r.AddNode(&util.GaiaContainerConfig)
+
+	for _, node := range r.Nodes {
+		err := node.Initialize(ctx)
+		if !assert.NoError(t, err, "Error adding node %d", node.Id) {
+			return
+		}
+	}
 
 	assert.True(t, true)
 }

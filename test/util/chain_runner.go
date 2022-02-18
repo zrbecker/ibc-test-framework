@@ -16,26 +16,27 @@ var (
 )
 
 type ChainRunner struct {
-	t            *testing.T
-	rootDataPath string
-	pool         *dockertest.Pool
-	network      *docker.Network
+	T            *testing.T
+	RootDataPath string
+	Pool         *dockertest.Pool
+	Network      *docker.Network
 
-	chainId string
-	nodes   []*Node
+	ChainId string
+	Nodes   []*Node
 
 	nextNodeId int
 }
 
 func NewChainRunner(t *testing.T, ctx context.Context, chainId string) (*ChainRunner, error) {
 	r := &ChainRunner{
-		t:            t,
-		rootDataPath: "",
-		pool:         nil,
-		network:      nil,
+		T:            t,
+		RootDataPath: "",
+		Pool:         nil,
+		Network:      nil,
 
-		chainId:    chainId,
-		nodes:      []*Node{},
+		ChainId: chainId,
+		Nodes:   []*Node{},
+
 		nextNodeId: 0,
 	}
 	if err := r.initHostEnv(ctx); err != nil {
@@ -44,37 +45,39 @@ func NewChainRunner(t *testing.T, ctx context.Context, chainId string) (*ChainRu
 	return r, nil
 }
 
-func (r *ChainRunner) AddNode(containerConfig *ContainerConfig) error {
-	node, err := NewNode(r, r.nextNodeId, containerConfig)
-	if err != nil {
-		return err
-	}
-	r.nextNodeId += 1
-	r.nodes = append(r.nodes, node)
-	return nil
-}
-
-// InitHostEnv creates docker host dependencies needed to run chain
 func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		return err
 	}
-	r.pool = pool
+	r.Pool = pool
 
 	rootDataPath, err := ioutil.TempDir("", "")
 	if err != nil {
 		return err
 	}
-	r.rootDataPath = rootDataPath
-	r.t.Cleanup(func() {
-		_ = os.RemoveAll(r.rootDataPath)
+	r.RootDataPath = rootDataPath
+	r.T.Cleanup(func() {
+		_ = os.RemoveAll(r.RootDataPath)
 	})
+	r.T.Log(rootDataPath)
 
-	network, err := r.pool.Client.CreateNetwork(docker.CreateNetworkOptions{
+	// Remove docker network if it failed to cleanup after previous test run
+	networks, err := r.Pool.Client.FilteredListNetworks(map[string]map[string]bool{"name": {NETWORK_NAME: true}})
+	if err != nil {
+		return err
+	}
+	for _, network := range networks {
+		if err := r.Pool.Client.RemoveNetwork(network.ID); err != nil {
+			return err
+		}
+	}
+
+	// Create docker network
+	network, err := r.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
 		Name:           NETWORK_NAME,
 		Options:        map[string]interface{}{},
-		Labels:         map[string]string{NETWORK_LABEL_KEY: r.t.Name()},
+		Labels:         map[string]string{NETWORK_LABEL_KEY: r.T.Name()},
 		CheckDuplicate: true,
 		Internal:       false,
 		EnableIPv6:     false,
@@ -83,10 +86,20 @@ func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.network = network
-	r.t.Cleanup(func() {
-		_ = r.pool.Client.RemoveNetwork(r.network.ID)
+	r.Network = network
+	r.T.Cleanup(func() {
+		_ = r.Pool.Client.RemoveNetwork(r.Network.ID)
 	})
 
+	return nil
+}
+
+func (r *ChainRunner) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
+	node, err := NewNode(r, r.nextNodeId, containerConfig, isValidator)
+	if err != nil {
+		return err
+	}
+	r.nextNodeId += 1
+	r.Nodes = append(r.Nodes, node)
 	return nil
 }
