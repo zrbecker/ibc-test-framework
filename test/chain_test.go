@@ -3,7 +3,6 @@ package test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/strangelove-ventures/ibc-test-framework/test/util"
 	"github.com/stretchr/testify/require"
@@ -32,5 +31,5 @@ func TestRun(t *testing.T) {
 
 	require.NoError(t, r.StartNodes(ctx))
 
-	time.Sleep(time.Second * 10)
+	require.NoError(t, r.WaitForHeight(ctx, 10))
 }

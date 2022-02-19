@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/avast/retry-go"
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
 	"golang.org/x/sync/errgroup"
@@ -216,7 +217,34 @@ func (r *ChainRunner) StartNodes(ctx context.Context) error {
 			if err := node.Start(ctx); err != nil {
 				return err
 			}
+			if err := node.SetupAndVerify(ctx); err != nil {
+				return err
+			}
 			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func (r *ChainRunner) WaitForHeight(ctx context.Context, height int64) error {
+	var eg errgroup.Group
+	r.T.Logf("Waiting For Nodes To Reach Block Height %d...", height)
+	for _, node := range r.Nodes {
+		node := node
+		eg.Go(func() error {
+			return retry.Do(func() error {
+				stat, err := node.Client.Status(ctx)
+				if err != nil {
+					return err
+				}
+
+				if stat.SyncInfo.CatchingUp || stat.SyncInfo.LatestBlockHeight < height {
+					return fmt.Errorf("node still under block %d: %d", height, stat.SyncInfo.LatestBlockHeight)
+				}
+				r.T.Logf("{%s} => reached block %d\n", node.Name(), height)
+				return nil
+				// TODO: setup backup delay here
+			}, retry.DelayType(retry.BackOffDelay), retry.Attempts(15))
 		})
 	}
 	return eg.Wait()

@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/ory/dockertest/docker"
 	tmconfig "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/p2p"
+	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
+	libclient "github.com/tendermint/tendermint/rpc/jsonrpc/client"
 )
 
 var (
@@ -26,6 +29,7 @@ type Node struct {
 	ContainerConfig *ContainerConfig
 	IsValidator     bool
 	Container       *docker.Container
+	Client          *rpchttp.HTTP
 }
 
 func NewNode(r *ChainRunner, id int, containerConfig *ContainerConfig, isValidator bool) (*Node, error) {
@@ -35,6 +39,7 @@ func NewNode(r *ChainRunner, id int, containerConfig *ContainerConfig, isValidat
 		ContainerConfig: containerConfig,
 		IsValidator:     isValidator,
 		Container:       nil,
+		Client:          nil,
 	}
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
@@ -169,4 +174,63 @@ func stdconfigchanges(cfg *tmconfig.Config, peers string) {
 
 	// set persistent peer nodes
 	cfg.P2P.PersistentPeers = peers
+}
+
+// NewClient creates and assigns a new Tendermint RPC client to the TestNode
+func (n *Node) NewClient(addr string) error {
+	httpClient, err := libclient.DefaultHTTPClient(addr)
+	if err != nil {
+		return err
+	}
+
+	httpClient.Timeout = 10 * time.Second
+	rpcClient, err := rpchttp.NewWithClient(addr, "/websocket", httpClient)
+	if err != nil {
+		return err
+	}
+
+	n.Client = rpcClient
+	return nil
+}
+
+// GetHostPort returns a resource's published port with an address.
+func (n *Node) GetHostPort(portID string) string {
+	if n.Container == nil || n.Container.NetworkSettings == nil {
+		return ""
+	}
+
+	m, ok := n.Container.NetworkSettings.Ports[docker.Port(portID)]
+	if !ok || len(m) == 0 {
+		return ""
+	}
+
+	ip := m[0].HostIP
+	if ip == "0.0.0.0" {
+		ip = "localhost"
+	}
+	return net.JoinHostPort(ip, m[0].HostPort)
+}
+
+func (n *Node) SetupAndVerify(ctx context.Context) error {
+	hostPort := n.GetHostPort("26657/tcp")
+	n.R.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
+
+	if err := n.NewClient(fmt.Sprintf("tcp://%s", hostPort)); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+	return retry.Do(func() error {
+		stat, err := n.Client.Status(ctx)
+		if err != nil {
+			return err
+		}
+
+		// TODO: reenable this check, having trouble with it for some reason
+		if stat != nil && stat.SyncInfo.CatchingUp {
+			return fmt.Errorf("still catching up: height(%d) catching-up(%t)",
+				stat.SyncInfo.LatestBlockHeight, stat.SyncInfo.CatchingUp)
+		}
+		return nil
+	}, retry.DelayType(retry.BackOffDelay))
 }
