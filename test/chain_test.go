@@ -6,6 +6,7 @@ import (
 
 	"github.com/ory/dockertest"
 	"github.com/strangelove-ventures/ibc-test-framework/test/chain"
+	"github.com/strangelove-ventures/ibc-test-framework/test/relayer"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -59,10 +60,12 @@ func TestRun(t *testing.T) {
 	var chain1, chain2 *chain.TestChain
 	eg := errgroup.Group{}
 
+	chain1ID := "ibc-test-1"
+	chain2ID := "ibc-test-2"
 	eg.Go(func() error {
 		chain1 = CreateChain(
 			t, ctx, pool,
-			"ibc-test-1",
+			chain1ID,
 			3 /* nodes */, 3, /* validators */
 		)
 		return nil
@@ -70,7 +73,7 @@ func TestRun(t *testing.T) {
 	eg.Go(func() error {
 		chain2 = CreateChain(
 			t, ctx, pool,
-			"ibc-test-2",
+			chain2ID,
 			3 /* nodes */, 3, /* validators */
 		)
 		return nil
@@ -81,10 +84,16 @@ func TestRun(t *testing.T) {
 	eg.Go(func() error { return chain2.WaitForHeight(ctx, 10) })
 	require.NoError(t, eg.Wait())
 
+	// Do Relayer Stuff
+
 	client_chain1_node := CreatePostGenNode(t, ctx, chain1)
 	client_chain2_node := CreatePostGenNode(t, ctx, chain2)
 	t.Log("new client nodes are waiting for height 20")
 	eg.Go(func() error { return client_chain1_node.WaitForHeight(ctx, 20) })
 	eg.Go(func() error { return client_chain2_node.WaitForHeight(ctx, 20) })
 	require.NoError(t, eg.Wait())
+
+	rly := relayer.NewTestRelayer(t, pool, "rly", "0.0.1", "rly")
+
+	require.NoError(t, rly.Initialize(ctx, client_chain1_node, client_chain2_node))
 }
