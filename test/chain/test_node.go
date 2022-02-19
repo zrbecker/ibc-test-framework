@@ -24,7 +24,7 @@ var (
 )
 
 type TestNode struct {
-	R               *TestChain
+	C               *TestChain
 	Id              int
 	ContainerConfig *ContainerConfig
 	IsValidator     bool
@@ -32,9 +32,9 @@ type TestNode struct {
 	Client          *rpchttp.HTTP
 }
 
-func NewTestNode(r *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*TestNode, error) {
+func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*TestNode, error) {
 	n := &TestNode{
-		R:               r,
+		C:               c,
 		Id:              id,
 		ContainerConfig: containerConfig,
 		IsValidator:     isValidator,
@@ -56,11 +56,11 @@ func (n *TestNode) initHostEnv() error {
 }
 
 func (n *TestNode) Name() string {
-	return fmt.Sprintf("node-%s-%d", n.R.T.Name(), n.Id)
+	return fmt.Sprintf("node-%s-%d", n.C.T.Name(), n.Id)
 }
 
 func (n *TestNode) HostHomeDir() string {
-	return filepath.Join(n.R.RootDataPath, n.Name())
+	return filepath.Join(n.C.RootDataPath, n.Name())
 }
 
 func (n *TestNode) HomeDir() string {
@@ -146,7 +146,7 @@ func (n *TestNode) TMConfigPath() string {
 func (n *TestNode) SetValidatorConfig() error {
 	config := tmconfig.DefaultConfig()
 
-	peers, err := n.R.PeerString()
+	peers, err := n.C.PeerString()
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (n *TestNode) GetHostPort(portID string) string {
 
 func (n *TestNode) SetupAndVerify(ctx context.Context) error {
 	hostPort := n.GetHostPort("26657/tcp")
-	n.R.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
+	n.C.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
 
 	if err := n.NewClient(fmt.Sprintf("tcp://%s", hostPort)); err != nil {
 		return err
