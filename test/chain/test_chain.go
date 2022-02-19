@@ -32,14 +32,14 @@ type TestChain struct {
 
 	ChainId string
 	Nodes   []*TestNode
-
-	nextTestNodeId int
 }
 
 func NewTestChain(
 	t *testing.T, ctx context.Context,
 	pool *dockertest.Pool,
 	chainId string,
+	numNodes int,
+	containerConfig *ContainerConfig,
 ) (*TestChain, error) {
 	c := &TestChain{
 		T:            t,
@@ -49,66 +49,67 @@ func NewTestChain(
 
 		ChainId: chainId,
 		Nodes:   []*TestNode{},
-
-		nextTestNodeId: 0,
 	}
 	if err := c.initHostEnv(ctx); err != nil {
 		return nil, err
 	}
+	for i := 0; i < numNodes; i += 1 {
+		if _, err := NewTestNode(c, i, containerConfig); err != nil {
+			return nil, err
+		}
+	}
 	return c, nil
 }
 
-func (c *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
-	node, err := NewTestNode(c, c.nextTestNodeId, containerConfig, isValidator)
-	if err != nil {
-		return err
+func (c *TestChain) Initialize(ctx context.Context) error {
+	var eg errgroup.Group
+	for _, n := range c.Nodes {
+		n := n
+		eg.Go(func() error { return n.Initialize(ctx) })
 	}
-	c.nextTestNodeId += 1
-	c.Nodes = append(c.Nodes, node)
-	return nil
+	return eg.Wait()
 }
 
-func (c *TestChain) CreateGenesis(ctx context.Context) error {
-	validators := []*TestNode{}
-	for _, node := range c.Nodes {
-		if node.IsValidator {
-			validators = append(validators, node)
+func (c *TestChain) CreateGenesis(ctx context.Context, genValidators []*TestNode) error {
+	for _, v := range genValidators {
+		if v.C != c {
+			return fmt.Errorf("validator %s is not part of chain %s", v.Name(), c.ChainId)
 		}
 	}
 
-	if len(validators) == 0 {
+	if len(genValidators) == 0 {
 		return errors.New("cannot create genesis file without at least one validator")
 	}
 
 	eg := errgroup.Group{}
-	genValidator := validators[0]
-	if err := genValidator.CreateGenesisTx(ctx); err != nil {
+	genV := genValidators[0]
+	if err := genV.CreateGenesisTx(ctx); err != nil {
 		return err
 	}
 
-	for _, validator := range validators[1:] {
-		validator := validator
+	for _, v := range genValidators[1:] {
+		v := v
 		eg.Go(func() error {
-			if err := validator.CreateGenesisTx(ctx); err != nil {
+			if err := v.CreateGenesisTx(ctx); err != nil {
 				return err
 			}
 
-			key, err := validator.GetKey(VALIDATOR_KEY)
+			key, err := v.GetKey(VALIDATOR_KEY)
 			if err != nil {
 				return err
 			}
 
-			if err := genValidator.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+			if err := genV.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
 				return err
 			}
 
-			nodeId, err := validator.TestNodeID()
+			nodeId, err := v.TestNodeID()
 			if err != nil {
 				return err
 			}
 
-			oldPath := path.Join(validator.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
-			newPath := path.Join(genValidator.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
+			oldPath := path.Join(v.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
+			newPath := path.Join(genV.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
 			if err := os.Rename(oldPath, newPath); err != nil {
 				return err
 			}
@@ -121,11 +122,11 @@ func (c *TestChain) CreateGenesis(ctx context.Context) error {
 		return err
 	}
 
-	if err := genValidator.CollectGentxs(ctx); err != nil {
+	if err := genV.CollectGentxs(ctx); err != nil {
 		return err
 	}
 
-	genesis, err := ioutil.ReadFile(genValidator.GenesisFilePath())
+	genesis, err := ioutil.ReadFile(genV.GenesisFilePath())
 	if err != nil {
 		return err
 	}

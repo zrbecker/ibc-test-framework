@@ -27,23 +27,22 @@ type TestNode struct {
 	C               *TestChain
 	Id              int
 	ContainerConfig *ContainerConfig
-	IsValidator     bool
 	Container       *docker.Container
 	Client          *rpchttp.HTTP
 }
 
-func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*TestNode, error) {
+func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig) (*TestNode, error) {
 	n := &TestNode{
 		C:               c,
 		Id:              id,
 		ContainerConfig: containerConfig,
-		IsValidator:     isValidator,
 		Container:       nil,
 		Client:          nil,
 	}
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
 	}
+	c.Nodes = append(c.Nodes, n)
 	return n, nil
 }
 
@@ -93,10 +92,8 @@ func (n *TestNode) Initialize(ctx context.Context) error {
 		return err
 	}
 
-	if n.IsValidator {
-		if err := n.CreateKey(ctx, VALIDATOR_KEY); err != nil {
-			return err
-		}
+	if err := n.CreateKey(ctx, VALIDATOR_KEY); err != nil {
+		return err
 	}
 
 	return nil
