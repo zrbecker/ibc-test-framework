@@ -2,7 +2,6 @@ package util
 
 import (
 	"crypto/rand"
-	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -23,7 +22,6 @@ func CreateTmpDir() (string, error) {
 			return "", err
 		}
 	} else if err != nil {
-		fmt.Printf("%+v\n", err)
 		return "", err
 	}
 
