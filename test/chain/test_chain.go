@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/avast/retry-go"
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
 	"golang.org/x/sync/errgroup"
@@ -24,13 +23,14 @@ var (
 )
 
 type TestChain struct {
-	T            *testing.T
-	RootDataPath string
-	Pool         *dockertest.Pool
-	Network      *docker.Network
-
-	ChainId string
-	Nodes   []*TestNode
+	T               *testing.T
+	RootDataPath    string
+	Pool            *dockertest.Pool
+	Network         *docker.Network
+	ChainId         string
+	Nodes           []*TestNode
+	NextNodeId      int
+	ContainerConfig *ContainerConfig
 }
 
 func NewTestChain(
@@ -48,12 +48,15 @@ func NewTestChain(
 
 		ChainId: chainId,
 		Nodes:   []*TestNode{},
+
+		NextNodeId:      0,
+		ContainerConfig: containerConfig,
 	}
 	if err := c.initHostEnv(ctx); err != nil {
 		return nil, err
 	}
 	for i := 0; i < numNodes; i += 1 {
-		if _, err := NewTestNode(c, i, containerConfig); err != nil {
+		if _, err := NewTestNode(c); err != nil {
 			return nil, err
 		}
 	}
@@ -191,19 +194,7 @@ func (c *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 	for _, node := range c.Nodes {
 		node := node
 		eg.Go(func() error {
-			return retry.Do(func() error {
-				stat, err := node.Client.Status(ctx)
-				if err != nil {
-					return err
-				}
-
-				if stat.SyncInfo.CatchingUp || stat.SyncInfo.LatestBlockHeight < height {
-					return fmt.Errorf("node still under block %d: %d", height, stat.SyncInfo.LatestBlockHeight)
-				}
-				c.T.Logf("{%s} => reached block %d\n", node.Name(), height)
-				return nil
-				// TODO: setup backup delay here
-			}, retry.DelayType(retry.BackOffDelay), retry.Attempts(15))
+			return node.WaitForHeight(ctx, height)
 		})
 	}
 	return eg.Wait()

@@ -27,17 +27,18 @@ type TestNode struct {
 	Client    *rpchttp.HTTP
 }
 
-func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig) (*TestNode, error) {
+func NewTestNode(c *TestChain) (*TestNode, error) {
 	n := &TestNode{
 		C:         c,
-		Id:        id,
+		Id:        c.NextNodeId,
 		Container: nil,
 		Client:    nil,
 	}
-	n.Container = NewTestNodeContainer(n, containerConfig)
+	n.Container = NewTestNodeContainer(n, c.ContainerConfig)
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
 	}
+	c.NextNodeId += 1
 	c.Nodes = append(c.Nodes, n)
 	return n, nil
 }
@@ -189,6 +190,22 @@ func (n *TestNode) Start(ctx context.Context) error {
 		}
 		return nil
 	}, retry.DelayType(retry.BackOffDelay))
+}
+
+func (n *TestNode) WaitForHeight(ctx context.Context, height int64) error {
+	return retry.Do(func() error {
+		stat, err := n.Client.Status(ctx)
+		if err != nil {
+			return err
+		}
+
+		if stat.SyncInfo.CatchingUp || stat.SyncInfo.LatestBlockHeight < height {
+			return fmt.Errorf("node still under block %d: %d", height, stat.SyncInfo.LatestBlockHeight)
+		}
+		n.C.T.Logf("{%s} => reached block %d\n", n.Name(), height)
+		return nil
+		// TODO: setup backup delay here
+	}, retry.DelayType(retry.BackOffDelay), retry.Attempts(15))
 }
 
 func (n *TestNode) initHostEnv() error {

@@ -42,8 +42,8 @@ func TestRun(t *testing.T) {
 	var chain1, chain2 *chain.TestChain
 	eg := errgroup.Group{}
 
-	eg.Go(func() error { chain1 = CreateChain(t, ctx, pool, "ibc-test-1", 4, 3); return nil })
-	eg.Go(func() error { chain2 = CreateChain(t, ctx, pool, "ibc-test-2", 4, 3); return nil })
+	eg.Go(func() error { chain1 = CreateChain(t, ctx, pool, "ibc-test-1", 3, 3); return nil })
+	eg.Go(func() error { chain2 = CreateChain(t, ctx, pool, "ibc-test-2", 3, 3); return nil })
 	require.NoError(t, eg.Wait())
 
 	eg.Go(func() error { return chain1.WaitForHeight(ctx, 10) })
