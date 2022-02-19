@@ -54,11 +54,37 @@ func (n *Node) CollectGentxs(ctx context.Context) error {
 	return n.Execute(ctx, command)
 }
 
-func (n *Node) Execute(ctx context.Context, cmd []string) error {
-	// TODO(zrbecker): Should a container have a name and hostname? And should it be random?
-	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
+func (n *Node) Start(ctx context.Context) error {
+	if n.Container != nil {
+		return fmt.Errorf("failed to start node %s, already exists", n.Name())
+	}
+	command := []string{n.ContainerConfig.Bin, "start", "--home", n.HomeDir()}
+	resource, err := n.Run(ctx, command)
+	n.Container = resource.Container
+	n.R.T.Cleanup(func() {
+		err := n.Stop(context.Background())
+		if err != nil {
+			n.R.T.Logf("failed to stop container %+v", err)
+		}
+	})
+	return err
+}
 
-	resource, err := n.R.Pool.RunWithOptions(&dockertest.RunOptions{
+func (n *Node) Stop(ctx context.Context) error {
+	if n.Container == nil {
+		return fmt.Errorf("failed to stop node %s, does not exist", n.Name())
+	}
+	if err := n.R.Pool.Client.StopContainer(n.Container.ID, 10); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (n *Node) Run(ctx context.Context, cmd []string) (*dockertest.Resource, error) {
+	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
+	return n.R.Pool.RunWithOptions(&dockertest.RunOptions{
+		Name:         RandLowerCaseLetterString(8),
+		Hostname:     n.Name(),
 		Repository:   n.ContainerConfig.Repository,
 		Tag:          n.ContainerConfig.Version,
 		ExposedPorts: n.ContainerConfig.Ports,
@@ -73,10 +99,13 @@ func (n *Node) Execute(ctx context.Context, cmd []string) error {
 		config.AutoRemove = true
 		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
 	})
+}
+
+func (n *Node) Execute(ctx context.Context, cmd []string) error {
+	resource, err := n.Run(ctx, cmd)
 	if err != nil {
 		return err
 	}
-
 	code, err := n.R.Pool.Client.WaitContainerWithContext(resource.Container.ID, ctx)
 	if err != nil {
 		return err
@@ -84,6 +113,5 @@ func (n *Node) Execute(ctx context.Context, cmd []string) error {
 	if code != 0 {
 		return fmt.Errorf("container returned non-zero error code: %d", code)
 	}
-
 	return nil
 }

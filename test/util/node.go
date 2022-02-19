@@ -6,9 +6,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/avast/retry-go"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/ory/dockertest/docker"
+	tmconfig "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/p2p"
 )
 
@@ -22,6 +25,7 @@ type Node struct {
 	Id              int
 	ContainerConfig *ContainerConfig
 	IsValidator     bool
+	Container       *docker.Container
 }
 
 func NewNode(r *ChainRunner, id int, containerConfig *ContainerConfig, isValidator bool) (*Node, error) {
@@ -30,6 +34,7 @@ func NewNode(r *ChainRunner, id int, containerConfig *ContainerConfig, isValidat
 		Id:              id,
 		ContainerConfig: containerConfig,
 		IsValidator:     isValidator,
+		Container:       nil,
 	}
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
@@ -119,4 +124,49 @@ func (n *Node) CreateGenesisTx(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (n *Node) PeerString() (string, error) {
+	nodeID, err := n.NodeID()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s@%s:26656", nodeID, n.Name()), nil
+}
+
+func (n *Node) TMConfigPath() string {
+	return path.Join(n.HostHomeDir(), "config", "config.toml")
+}
+
+func (n *Node) SetValidatorConfig() error {
+	config := tmconfig.DefaultConfig()
+
+	peers, err := n.R.PeerString()
+	if err != nil {
+		return err
+	}
+	stdconfigchanges(config, peers)
+
+	tmconfig.WriteConfigFile(n.TMConfigPath(), config)
+
+	return nil
+}
+
+func stdconfigchanges(cfg *tmconfig.Config, peers string) {
+	// turn down blocktimes to make the chain faster
+	cfg.Consensus.TimeoutCommit = 3 * time.Second
+	cfg.Consensus.TimeoutPropose = 3 * time.Second
+
+	// Open up rpc address
+	cfg.RPC.ListenAddress = "tcp://0.0.0.0:26657"
+
+	// Allow for some p2p weirdness
+	cfg.P2P.AllowDuplicateIP = true
+	cfg.P2P.AddrBookStrict = false
+
+	// Set log level to info
+	cfg.BaseConfig.LogLevel = "info"
+
+	// set persistent peer nodes
+	cfg.P2P.PersistentPeers = peers
 }

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/ory/dockertest"
@@ -57,26 +58,16 @@ func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 	}
 	r.Pool = pool
 
-	rootDataPath, err := ioutil.TempDir("", "")
+	if err := r.removeDockerArtifactsFromPreviousTest(); err != nil {
+		return err
+	}
+
+	rootDataPath, err := CreateTmpDir()
 	if err != nil {
 		return err
 	}
 	r.RootDataPath = rootDataPath
-	r.T.Cleanup(func() {
-		_ = os.RemoveAll(r.RootDataPath)
-	})
 	r.T.Log(rootDataPath)
-
-	// Remove docker network if it failed to cleanup after previous test run
-	networks, err := r.Pool.Client.FilteredListNetworks(map[string]map[string]bool{"name": {NETWORK_NAME: true}})
-	if err != nil {
-		return err
-	}
-	for _, network := range networks {
-		if err := r.Pool.Client.RemoveNetwork(network.ID); err != nil {
-			return err
-		}
-	}
 
 	// Create docker network
 	network, err := r.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
@@ -93,7 +84,10 @@ func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 	}
 	r.Network = network
 	r.T.Cleanup(func() {
-		_ = r.Pool.Client.RemoveNetwork(r.Network.ID)
+		err = r.Pool.Client.RemoveNetwork(r.Network.ID)
+		if err != nil {
+			r.T.Logf("failed to remove docker network on test cleanup %+v", err)
+		}
 	})
 
 	return nil
@@ -184,13 +178,74 @@ func (r *ChainRunner) CreateGenesis(ctx context.Context) error {
 	return nil
 }
 
-func (r ChainRunner) LogGenesisHashes() error {
+func (r *ChainRunner) LogGenesisHashes() error {
 	for _, node := range r.Nodes {
 		genesis, err := ioutil.ReadFile(node.GenesisFilePath())
 		if err != nil {
 			return err
 		}
 		r.T.Logf("{%s} genesis hash %x", node.Name(), sha256.Sum256(genesis))
+	}
+	return nil
+}
+
+func (r *ChainRunner) PeerString() (string, error) {
+	bldr := new(strings.Builder)
+	for _, node := range r.Nodes {
+		peerString, err := node.PeerString()
+		if err != nil {
+			return "", err
+		}
+		r.T.Logf("{%s} peering {%s}", node.Name(), peerString)
+		if _, err := bldr.WriteString(peerString + ","); err != nil {
+			return "", err
+		}
+	}
+	return strings.TrimSuffix(bldr.String(), ","), nil
+}
+
+func (r *ChainRunner) StartNodes(ctx context.Context) error {
+	eg := errgroup.Group{}
+	for _, node := range r.Nodes {
+		node := node
+		r.T.Logf("{%s} => starting container...", node.Name())
+		eg.Go(func() error {
+			if err := node.SetValidatorConfig(); err != nil {
+				return err
+			}
+			if err := node.Start(ctx); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func (r *ChainRunner) removeDockerArtifactsFromPreviousTest() error {
+	containerFilter := map[string][]string{"network": {NETWORK_NAME}}
+	containers, err := r.Pool.Client.ListContainers(docker.ListContainersOptions{Filters: containerFilter})
+	if err != nil {
+		return err
+	}
+	for _, container := range containers {
+		r.T.Logf("removing container %s %v from previous test", container.ID, container.Names)
+		opts := docker.RemoveContainerOptions{ID: container.ID, Force: true}
+		if err := r.Pool.Client.RemoveContainer(opts); err != nil {
+			return err
+		}
+	}
+
+	networkFilter := map[string]map[string]bool{"name": {NETWORK_NAME: true}}
+	networks, err := r.Pool.Client.FilteredListNetworks(networkFilter)
+	if err != nil {
+		return err
+	}
+	for _, network := range networks {
+		r.T.Logf("removing network %s from previous test", network.Name)
+		if err := r.Pool.Client.RemoveNetwork(network.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

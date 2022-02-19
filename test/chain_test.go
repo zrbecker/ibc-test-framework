@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/strangelove-ventures/ibc-test-framework/test/util"
 	"github.com/stretchr/testify/require"
@@ -28,4 +29,8 @@ func TestRun(t *testing.T) {
 	require.NoError(t, eg.Wait(), "Error initializing nodes")
 
 	require.NoError(t, r.CreateGenesis(ctx))
+
+	require.NoError(t, r.StartNodes(ctx))
+
+	time.Sleep(time.Second * 10)
 }
