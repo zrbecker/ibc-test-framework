@@ -38,7 +38,7 @@ func (nc *TestNodeContainer) HomeDir() string {
 // InitHomeFolder initializes a home folder for the given node.
 func (nc *TestNodeContainer) InitHomeFolder(ctx context.Context) error {
 	command := []string{nc.Config.Bin, "init", nc.N.Name(),
-		"--chain-id", nc.N.C.ChainId,
+		"--chain-id", nc.N.C.ChainID,
 		"--home", nc.HomeDir(),
 	}
 	return nc.RunAndWait(ctx, command, "")
@@ -67,7 +67,7 @@ func (nc *TestNodeContainer) Gentx(ctx context.Context, name string) error {
 	command := []string{nc.Config.Bin, "gentx", VALIDATOR_KEY_NAME, "100000000000stake",
 		"--keyring-backend", "test",
 		"--home", nc.HomeDir(),
-		"--chain-id", nc.N.C.ChainId,
+		"--chain-id", nc.N.C.ChainID,
 	}
 	return nc.RunAndWait(ctx, command, "")
 }

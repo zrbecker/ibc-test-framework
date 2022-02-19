@@ -27,16 +27,16 @@ type TestChain struct {
 	RootDataPath    string
 	Pool            *dockertest.Pool
 	Network         *docker.Network
-	ChainId         string
+	ChainID         string
 	Nodes           []*TestNode
-	NextNodeId      int
+	NextNodeID      int
 	ContainerConfig *ContainerConfig
 }
 
 func NewTestChain(
 	t *testing.T, ctx context.Context,
 	pool *dockertest.Pool,
-	chainId string,
+	chainID string,
 	numNodes int,
 	containerConfig *ContainerConfig,
 ) (*TestChain, error) {
@@ -46,10 +46,10 @@ func NewTestChain(
 		Pool:         pool,
 		Network:      nil,
 
-		ChainId: chainId,
+		ChainID: chainID,
 		Nodes:   []*TestNode{},
 
-		NextNodeId:      0,
+		NextNodeID:      0,
 		ContainerConfig: containerConfig,
 	}
 	if err := c.initHostEnv(ctx); err != nil {
@@ -64,7 +64,7 @@ func NewTestChain(
 }
 
 func (c *TestChain) NetworkName() string {
-	return fmt.Sprintf("%s-network", c.ChainId)
+	return fmt.Sprintf("%s-network", c.ChainID)
 }
 
 func (c *TestChain) Initialize(ctx context.Context) error {
@@ -79,7 +79,7 @@ func (c *TestChain) Initialize(ctx context.Context) error {
 func (c *TestChain) CreateGenesis(ctx context.Context, genValidators []*TestNode) error {
 	for _, v := range genValidators {
 		if v.C != c {
-			return fmt.Errorf("validator %s is not part of chain %s", v.Name(), c.ChainId)
+			return fmt.Errorf("validator %s is not part of chain %s", v.Name(), c.ChainID)
 		}
 	}
 
@@ -109,13 +109,13 @@ func (c *TestChain) CreateGenesis(ctx context.Context, genValidators []*TestNode
 				return err
 			}
 
-			nodeId, err := v.TestNodeID()
+			nodeID, err := v.TestNodeID()
 			if err != nil {
 				return err
 			}
 
-			oldPath := path.Join(v.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
-			newPath := path.Join(genV.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
+			oldPath := path.Join(v.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeID))
+			newPath := path.Join(genV.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeID))
 			if err := os.Rename(oldPath, newPath); err != nil {
 				return err
 			}

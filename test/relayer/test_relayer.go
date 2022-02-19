@@ -60,7 +60,7 @@ func (r *TestRelayer) Initialize(
 	"gas-adjustment": 1.5,
 	"gas-prices": "0.001umuon",
 	"trusting-period": "10m"
-}`, node1.C.ChainId, chain1RPCAddress)
+}`, node1.C.ChainID, chain1RPCAddress)
 
 	chain2RPCAddress := fmt.Sprintf("tcp://%s", node2.Container.GetHostPort("26657/tcp"))
 	chain2Config := fmt.Sprintf(`{
@@ -70,7 +70,7 @@ func (r *TestRelayer) Initialize(
 	"gas-adjustment": 1.5,
 	"gas-prices": "0.001umuon",
 	"trusting-period": "10m"
-}`, node2.C.ChainId, chain2RPCAddress)
+}`, node2.C.ChainID, chain2RPCAddress)
 
 	// Initialize rly config
 	command := []string{r.Bin, "config", "init", "--home", r.HomeDir()}
@@ -100,31 +100,31 @@ func (r *TestRelayer) Initialize(
 	}
 
 	// Create chain keys
-	command = []string{r.Bin, "keys", "add", node1.C.ChainId, fmt.Sprintf("%s-key", node1.C.ChainId)}
+	command = []string{r.Bin, "keys", "add", node1.C.ChainID, fmt.Sprintf("%s-key", node1.C.ChainID)}
 	if err := r.RunAndWait(ctx, command, ""); err != nil {
 		return err
 	}
-	command = []string{r.Bin, "keys", "add", node2.C.ChainId, fmt.Sprintf("%s-key", node2.C.ChainId)}
+	command = []string{r.Bin, "keys", "add", node2.C.ChainID, fmt.Sprintf("%s-key", node2.C.ChainID)}
 	if err := r.RunAndWait(ctx, command, ""); err != nil {
 		return err
 	}
 
 	// Add keys to chain
-	command = []string{r.Bin, "chains", "edit", node1.C.ChainId, "key", fmt.Sprintf("%s-key", node1.C.ChainId)}
+	command = []string{r.Bin, "chains", "edit", node1.C.ChainID, "key", fmt.Sprintf("%s-key", node1.C.ChainID)}
 	if err := r.RunAndWait(ctx, command, ""); err != nil {
 		return err
 	}
-	command = []string{r.Bin, "chains", "edit", node2.C.ChainId, "key", fmt.Sprintf("%s-key", node2.C.ChainId)}
+	command = []string{r.Bin, "chains", "edit", node2.C.ChainID, "key", fmt.Sprintf("%s-key", node2.C.ChainID)}
 	if err := r.RunAndWait(ctx, command, ""); err != nil {
 		return err
 	}
 
-	key1, err := r.GetKey(node1.C.ChainId, fmt.Sprintf("%s-key", node1.C.ChainId))
+	key1, err := r.GetKey(node1.C.ChainID, fmt.Sprintf("%s-key", node1.C.ChainID))
 	if err != nil {
 		return err
 	}
 	r.T.Logf("Key 1: %s", key1)
-	key2, err := r.GetKey(node2.C.ChainId, fmt.Sprintf("%s-key", node2.C.ChainId))
+	key2, err := r.GetKey(node2.C.ChainID, fmt.Sprintf("%s-key", node2.C.ChainID))
 	if err != nil {
 		return err
 	}

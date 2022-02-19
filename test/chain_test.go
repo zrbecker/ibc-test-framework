@@ -15,13 +15,13 @@ func CreateChain(
 	t *testing.T,
 	ctx context.Context,
 	pool *dockertest.Pool,
-	chainId string,
+	chainID string,
 	numNodes int,
 	numValidators int,
 ) *chain.TestChain {
 	c, err := chain.NewTestChain(
 		t, ctx, pool,
-		chainId,
+		chainID,
 		numNodes,
 		&chain.GaiaContainerConfig,
 	)
@@ -80,20 +80,20 @@ func TestRun(t *testing.T) {
 	})
 	require.NoError(t, eg.Wait())
 
-	eg.Go(func() error { return chain1.WaitForHeight(ctx, 10) })
-	eg.Go(func() error { return chain2.WaitForHeight(ctx, 10) })
+	eg.Go(func() error { return chain1.WaitForHeight(ctx, 5) })
+	eg.Go(func() error { return chain2.WaitForHeight(ctx, 5) })
 	require.NoError(t, eg.Wait())
 
 	// Do Relayer Stuff
 
-	client_chain1_node := CreatePostGenNode(t, ctx, chain1)
-	client_chain2_node := CreatePostGenNode(t, ctx, chain2)
+	chain1Node := CreatePostGenNode(t, ctx, chain1)
+	chain2Node := CreatePostGenNode(t, ctx, chain2)
 	t.Log("new client nodes are waiting for height 20")
-	eg.Go(func() error { return client_chain1_node.WaitForHeight(ctx, 20) })
-	eg.Go(func() error { return client_chain2_node.WaitForHeight(ctx, 20) })
+	eg.Go(func() error { return chain1Node.WaitForHeight(ctx, 10) })
+	eg.Go(func() error { return chain2Node.WaitForHeight(ctx, 10) })
 	require.NoError(t, eg.Wait())
 
 	rly := relayer.NewTestRelayer(t, pool, "rly", "0.0.1", "rly")
 
-	require.NoError(t, rly.Initialize(ctx, client_chain1_node, client_chain2_node))
+	require.NoError(t, rly.Initialize(ctx, chain1Node, chain2Node))
 }

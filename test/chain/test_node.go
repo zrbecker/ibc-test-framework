@@ -23,7 +23,7 @@ var (
 
 type TestNode struct {
 	C         *TestChain
-	Id        int
+	ID        int
 	Container *TestNodeContainer
 	Client    *rpchttp.HTTP
 }
@@ -31,7 +31,7 @@ type TestNode struct {
 func NewTestNode(c *TestChain) (*TestNode, error) {
 	n := &TestNode{
 		C:         c,
-		Id:        c.NextNodeId,
+		ID:        c.NextNodeID,
 		Container: nil,
 		Client:    nil,
 	}
@@ -39,13 +39,13 @@ func NewTestNode(c *TestChain) (*TestNode, error) {
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
 	}
-	c.NextNodeId += 1
+	c.NextNodeID += 1
 	c.Nodes = append(c.Nodes, n)
 	return n, nil
 }
 
 func (n *TestNode) Name() string {
-	return fmt.Sprintf("node-%s-%s-%d", n.C.T.Name(), n.C.ChainId, n.Id)
+	return fmt.Sprintf("node-%s-%s-%d", n.C.T.Name(), n.C.ChainID, n.ID)
 }
 
 // HostHomeDir returns the host home directory that is mounted on the docker container
