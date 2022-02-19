@@ -46,6 +46,14 @@ func (n *Node) Gentx(ctx context.Context, name string) error {
 	return n.Execute(ctx, command)
 }
 
+// CollectGentxs runs collect gentxs on the node's home folders
+func (n *Node) CollectGentxs(ctx context.Context) error {
+	command := []string{n.ContainerConfig.Bin, "collect-gentxs",
+		"--home", n.HomeDir(),
+	}
+	return n.Execute(ctx, command)
+}
+
 func (n *Node) Execute(ctx context.Context, cmd []string) error {
 	// TODO(zrbecker): Should a container have a name and hostname? And should it be random?
 	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
@@ -56,6 +64,7 @@ func (n *Node) Execute(ctx context.Context, cmd []string) error {
 		ExposedPorts: n.ContainerConfig.Ports,
 		Cmd:          cmd,
 		Labels:       map[string]string{NODE_LABEL_KEY: n.R.T.Name()},
+		NetworkID:    n.R.Network.ID,
 	}, func(config *docker.HostConfig) {
 		config.Binds = []string{
 			fmt.Sprintf("%s:%s", n.HostHomeDir(), n.HomeDir()),

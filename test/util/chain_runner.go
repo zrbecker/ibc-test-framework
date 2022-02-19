@@ -2,12 +2,16 @@ package util
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"testing"
 
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -101,5 +105,65 @@ func (r *ChainRunner) AddNode(containerConfig *ContainerConfig, isValidator bool
 	}
 	r.nextNodeId += 1
 	r.Nodes = append(r.Nodes, node)
+	return nil
+}
+
+func (r *ChainRunner) CreateGenesis(ctx context.Context) error {
+	validators := []*Node{}
+	for _, node := range r.Nodes {
+		if node.IsValidator {
+			validators = append(validators, node)
+		}
+	}
+
+	if len(validators) == 0 {
+		return errors.New("cannot create genesis file without at least one validator")
+	}
+
+	eg := errgroup.Group{}
+	genValidator := validators[0]
+	if err := genValidator.CreateGenesisTx(ctx); err != nil {
+		return err
+	}
+
+	for _, validator := range validators[1:] {
+		validator := validator
+		eg.Go(func() error {
+			if err := validator.CreateGenesisTx(ctx); err != nil {
+				return err
+			}
+
+			key, err := validator.GetKey(VALIDATOR_KEY)
+			if err != nil {
+				return err
+			}
+
+			if err := genValidator.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+				return err
+			}
+
+			nodeId, err := validator.NodeID()
+			if err != nil {
+				return err
+			}
+
+			oldPath := path.Join(validator.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
+			newPath := path.Join(genValidator.HostHomeDir(), "config", "gentx", fmt.Sprintf("gentx-%s.json", nodeId))
+			if err := os.Rename(oldPath, newPath); err != nil {
+				return err
+			}
+
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	if err := genValidator.CollectGentxs(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }

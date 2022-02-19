@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/avast/retry-go"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/tendermint/tendermint/p2p"
 )
 
 var (
@@ -85,14 +87,31 @@ func (n *Node) Initialize(ctx context.Context) error {
 		if err := n.CreateKey(ctx, VALIDATOR_KEY); err != nil {
 			return err
 		}
-		key, err := n.GetKey(VALIDATOR_KEY)
-		if err != nil {
-			return err
-		}
-		if err := n.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
-			return err
-		}
-		return n.Gentx(ctx, VALIDATOR_KEY)
+	}
+
+	return nil
+}
+
+// NodeID returns the node of a given node
+func (n *Node) NodeID() (string, error) {
+	nodeKey, err := p2p.LoadNodeKey(path.Join(n.HostHomeDir(), "config", "node_key.json"))
+	if err != nil {
+		return "", err
+	}
+	return string(nodeKey.ID()), nil
+}
+
+func (n *Node) CreateGenesisTx(ctx context.Context) error {
+	key, err := n.GetKey(VALIDATOR_KEY)
+	if err != nil {
+		return err
+	}
+	if err := n.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+		return err
+	}
+
+	if err := n.Gentx(ctx, VALIDATOR_KEY); err != nil {
+		return err
 	}
 
 	return nil
