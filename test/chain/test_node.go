@@ -3,7 +3,6 @@ package chain
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/ory/dockertest/docker"
 	tmconfig "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/p2p"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
@@ -19,26 +17,24 @@ import (
 )
 
 var (
-	NODE_LABEL_KEY = "ibc-test"
-	VALIDATOR_KEY  = "validator"
+	VALIDATOR_KEY_NAME = "validator"
 )
 
 type TestNode struct {
-	C               *TestChain
-	Id              int
-	ContainerConfig *ContainerConfig
-	Container       *docker.Container
-	Client          *rpchttp.HTTP
+	C         *TestChain
+	Id        int
+	Container *TestNodeContainer
+	Client    *rpchttp.HTTP
 }
 
 func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig) (*TestNode, error) {
 	n := &TestNode{
-		C:               c,
-		Id:              id,
-		ContainerConfig: containerConfig,
-		Container:       nil,
-		Client:          nil,
+		C:         c,
+		Id:        id,
+		Container: nil,
+		Client:    nil,
 	}
+	n.Container = NewTestNodeContainer(n, containerConfig)
 	if err := n.initHostEnv(); err != nil {
 		return nil, err
 	}
@@ -46,24 +42,13 @@ func NewTestNode(c *TestChain, id int, containerConfig *ContainerConfig) (*TestN
 	return n, nil
 }
 
-func (n *TestNode) initHostEnv() error {
-	if err := os.MkdirAll(n.HostHomeDir(), 0755); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (n *TestNode) Name() string {
-	return fmt.Sprintf("node-%s-%d", n.C.T.Name(), n.Id)
+	return fmt.Sprintf("node-%s-%s-%d", n.C.T.Name(), n.C.ChainId, n.Id)
 }
 
+// HostHomeDir returns the host home directory that is mounted on the docker container
 func (n *TestNode) HostHomeDir() string {
 	return filepath.Join(n.C.RootDataPath, n.Name())
-}
-
-func (n *TestNode) HomeDir() string {
-	return filepath.Join("/home", n.ContainerConfig.Bin)
 }
 
 // Keybase returns the keyring for a given node
@@ -87,19 +72,20 @@ func (n *TestNode) GetKey(name string) (info keyring.Info, err error) {
 	})
 }
 
+// Initialize prepares the node before starting
 func (n *TestNode) Initialize(ctx context.Context) error {
-	if err := n.InitHomeFolder(ctx); err != nil {
+	if err := n.Container.InitHomeFolder(ctx); err != nil {
 		return err
 	}
 
-	if err := n.CreateKey(ctx, VALIDATOR_KEY); err != nil {
+	if err := n.Container.CreateKey(ctx, VALIDATOR_KEY_NAME); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// TestNodeID returns the node of a given node
+// TestNodeID returns the node ID of a given node
 func (n *TestNode) TestNodeID() (string, error) {
 	nodeKey, err := p2p.LoadNodeKey(path.Join(n.HostHomeDir(), "config", "node_key.json"))
 	if err != nil {
@@ -113,15 +99,15 @@ func (n *TestNode) GenesisFilePath() string {
 }
 
 func (n *TestNode) CreateGenesisTx(ctx context.Context) error {
-	key, err := n.GetKey(VALIDATOR_KEY)
+	key, err := n.GetKey(VALIDATOR_KEY_NAME)
 	if err != nil {
 		return err
 	}
-	if err := n.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+	if err := n.Container.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
 		return err
 	}
 
-	if err := n.Gentx(ctx, VALIDATOR_KEY); err != nil {
+	if err := n.Container.Gentx(ctx, VALIDATOR_KEY_NAME); err != nil {
 		return err
 	}
 
@@ -149,7 +135,66 @@ func (n *TestNode) SetValidatorConfig() error {
 	}
 	stdconfigchanges(config, peers)
 
+	config.Moniker = n.Name()
+
 	tmconfig.WriteConfigFile(n.TMConfigPath(), config)
+
+	return nil
+}
+
+// NewClient creates and assigns a new Tendermint RPC client to the TestTestNode
+func (n *TestNode) NewClient(addr string) error {
+	httpClient, err := libclient.DefaultHTTPClient(addr)
+	if err != nil {
+		return err
+	}
+
+	httpClient.Timeout = 10 * time.Second
+	rpcClient, err := rpchttp.NewWithClient(addr, "/websocket", httpClient)
+	if err != nil {
+		return err
+	}
+
+	n.Client = rpcClient
+	return nil
+}
+
+func (n *TestNode) Start(ctx context.Context) error {
+	if err := n.SetValidatorConfig(); err != nil {
+		return err
+	}
+
+	if err := n.Container.Start(ctx); err != nil {
+		return err
+	}
+
+	hostPort := n.Container.GetHostPort("26657/tcp")
+	n.C.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
+
+	if err := n.NewClient(fmt.Sprintf("tcp://%s", hostPort)); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+	return retry.Do(func() error {
+		stat, err := n.Client.Status(ctx)
+		if err != nil {
+			return err
+		}
+
+		// TODO: reenable this check, having trouble with it for some reason
+		if stat != nil && stat.SyncInfo.CatchingUp {
+			return fmt.Errorf("still catching up: height(%d) catching-up(%t)",
+				stat.SyncInfo.LatestBlockHeight, stat.SyncInfo.CatchingUp)
+		}
+		return nil
+	}, retry.DelayType(retry.BackOffDelay))
+}
+
+func (n *TestNode) initHostEnv() error {
+	if err := os.MkdirAll(n.HostHomeDir(), 0755); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -171,63 +216,4 @@ func stdconfigchanges(cfg *tmconfig.Config, peers string) {
 
 	// set persistent peer nodes
 	cfg.P2P.PersistentPeers = peers
-}
-
-// NewClient creates and assigns a new Tendermint RPC client to the TestTestNode
-func (n *TestNode) NewClient(addr string) error {
-	httpClient, err := libclient.DefaultHTTPClient(addr)
-	if err != nil {
-		return err
-	}
-
-	httpClient.Timeout = 10 * time.Second
-	rpcClient, err := rpchttp.NewWithClient(addr, "/websocket", httpClient)
-	if err != nil {
-		return err
-	}
-
-	n.Client = rpcClient
-	return nil
-}
-
-// GetHostPort returns a resource's published port with an address.
-func (n *TestNode) GetHostPort(portID string) string {
-	if n.Container == nil || n.Container.NetworkSettings == nil {
-		return ""
-	}
-
-	m, ok := n.Container.NetworkSettings.Ports[docker.Port(portID)]
-	if !ok || len(m) == 0 {
-		return ""
-	}
-
-	ip := m[0].HostIP
-	if ip == "0.0.0.0" {
-		ip = "localhost"
-	}
-	return net.JoinHostPort(ip, m[0].HostPort)
-}
-
-func (n *TestNode) SetupAndVerify(ctx context.Context) error {
-	hostPort := n.GetHostPort("26657/tcp")
-	n.C.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
-
-	if err := n.NewClient(fmt.Sprintf("tcp://%s", hostPort)); err != nil {
-		return err
-	}
-
-	time.Sleep(5 * time.Second)
-	return retry.Do(func() error {
-		stat, err := n.Client.Status(ctx)
-		if err != nil {
-			return err
-		}
-
-		// TODO: reenable this check, having trouble with it for some reason
-		if stat != nil && stat.SyncInfo.CatchingUp {
-			return fmt.Errorf("still catching up: height(%d) catching-up(%t)",
-				stat.SyncInfo.LatestBlockHeight, stat.SyncInfo.CatchingUp)
-		}
-		return nil
-	}, retry.DelayType(retry.BackOffDelay))
 }

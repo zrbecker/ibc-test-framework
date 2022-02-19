@@ -21,7 +21,6 @@ import (
 
 var (
 	NETWORK_LABEL_KEY = "ibc-test"
-	NETWORK_NAME      = "ibc-test-network"
 )
 
 type TestChain struct {
@@ -61,6 +60,10 @@ func NewTestChain(
 	return c, nil
 }
 
+func (c *TestChain) NetworkName() string {
+	return fmt.Sprintf("%s-network", c.ChainId)
+}
+
 func (c *TestChain) Initialize(ctx context.Context) error {
 	var eg errgroup.Group
 	for _, n := range c.Nodes {
@@ -94,12 +97,12 @@ func (c *TestChain) CreateGenesis(ctx context.Context, genValidators []*TestNode
 				return err
 			}
 
-			key, err := v.GetKey(VALIDATOR_KEY)
+			key, err := v.GetKey(VALIDATOR_KEY_NAME)
 			if err != nil {
 				return err
 			}
 
-			if err := genV.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
+			if err := genV.Container.AddGenesisAccount(ctx, key.GetAddress().String()); err != nil {
 				return err
 			}
 
@@ -122,7 +125,7 @@ func (c *TestChain) CreateGenesis(ctx context.Context, genValidators []*TestNode
 		return err
 	}
 
-	if err := genV.CollectGentxs(ctx); err != nil {
+	if err := genV.Container.CollectGentxs(ctx); err != nil {
 		return err
 	}
 
@@ -176,16 +179,7 @@ func (c *TestChain) Start(ctx context.Context) error {
 		node := node
 		c.T.Logf("{%s} => starting container...", node.Name())
 		eg.Go(func() error {
-			if err := node.SetValidatorConfig(); err != nil {
-				return err
-			}
-			if err := node.Start(ctx); err != nil {
-				return err
-			}
-			if err := node.SetupAndVerify(ctx); err != nil {
-				return err
-			}
-			return nil
+			return node.Start(ctx)
 		})
 	}
 	return eg.Wait()
@@ -216,7 +210,8 @@ func (c *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 }
 
 func (c *TestChain) initHostEnv(ctx context.Context) error {
-	if err := c.removeDockerArtifactsFromPreviousTest(); err != nil {
+	c.T.Log("checking for docker artifacts from previous test")
+	if err := c.removeDockerArtifacts(); err != nil {
 		return err
 	}
 
@@ -230,7 +225,7 @@ func (c *TestChain) initHostEnv(ctx context.Context) error {
 
 	// Create docker network
 	network, err := c.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
-		Name:           NETWORK_NAME,
+		Name:           c.NetworkName(),
 		Options:        map[string]interface{}{},
 		Labels:         map[string]string{NETWORK_LABEL_KEY: c.T.Name()},
 		CheckDuplicate: true,
@@ -243,36 +238,41 @@ func (c *TestChain) initHostEnv(ctx context.Context) error {
 	}
 	c.Network = network
 	c.T.Cleanup(func() {
-		err = c.Pool.Client.RemoveNetwork(c.Network.ID)
-		if err != nil {
-			c.T.Logf("failed to remove docker network on test cleanup %+v", err)
-		}
+		c.removeDockerArtifacts()
 	})
 
 	return nil
 }
 
-func (c *TestChain) removeDockerArtifactsFromPreviousTest() error {
-	containerFilter := map[string][]string{"network": {NETWORK_NAME}}
+func (c *TestChain) removeDockerArtifacts() error {
+	containerFilter := map[string][]string{"network": {c.NetworkName()}}
 	containers, err := c.Pool.Client.ListContainers(docker.ListContainersOptions{Filters: containerFilter})
 	if err != nil {
 		return err
 	}
+
+	eg := errgroup.Group{}
 	for _, container := range containers {
-		c.T.Logf("removing container %s %v from previous test", container.ID, container.Names)
-		opts := docker.RemoveContainerOptions{ID: container.ID, Force: true}
-		if err := c.Pool.Client.RemoveContainer(opts); err != nil {
-			return err
-		}
+		container := container
+		c.T.Logf("removing container %s %v", container.ID, container.Names)
+		eg.Go(func() error {
+			return c.Pool.Client.RemoveContainer(docker.RemoveContainerOptions{
+				ID:    container.ID,
+				Force: true,
+			})
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
-	networkFilter := map[string]map[string]bool{"name": {NETWORK_NAME: true}}
+	networkFilter := map[string]map[string]bool{"name": {c.NetworkName(): true}}
 	networks, err := c.Pool.Client.FilteredListNetworks(networkFilter)
 	if err != nil {
 		return err
 	}
 	for _, network := range networks {
-		c.T.Logf("removing network %s from previous test", network.Name)
+		c.T.Logf("removing network %s", network.Name)
 		if err := c.Pool.Client.RemoveNetwork(network.ID); err != nil {
 			return err
 		}
