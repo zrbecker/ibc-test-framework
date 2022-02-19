@@ -31,9 +31,9 @@ type TestChain struct {
 	Network      *docker.Network
 
 	ChainId string
-	Nodes   []*Node
+	Nodes   []*TestNode
 
-	nextNodeId int
+	nextTestNodeId int
 }
 
 func NewTestChain(t *testing.T, ctx context.Context, chainId string) (*TestChain, error) {
@@ -44,9 +44,9 @@ func NewTestChain(t *testing.T, ctx context.Context, chainId string) (*TestChain
 		Network:      nil,
 
 		ChainId: chainId,
-		Nodes:   []*Node{},
+		Nodes:   []*TestNode{},
 
-		nextNodeId: 0,
+		nextTestNodeId: 0,
 	}
 	if err := r.initHostEnv(ctx); err != nil {
 		return nil, err
@@ -97,17 +97,17 @@ func (r *TestChain) initHostEnv(ctx context.Context) error {
 }
 
 func (r *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
-	node, err := NewNode(r, r.nextNodeId, containerConfig, isValidator)
+	node, err := NewTestNode(r, r.nextTestNodeId, containerConfig, isValidator)
 	if err != nil {
 		return err
 	}
-	r.nextNodeId += 1
+	r.nextTestNodeId += 1
 	r.Nodes = append(r.Nodes, node)
 	return nil
 }
 
 func (r *TestChain) CreateGenesis(ctx context.Context) error {
-	validators := []*Node{}
+	validators := []*TestNode{}
 	for _, node := range r.Nodes {
 		if node.IsValidator {
 			validators = append(validators, node)
@@ -140,7 +140,7 @@ func (r *TestChain) CreateGenesis(ctx context.Context) error {
 				return err
 			}
 
-			nodeId, err := validator.NodeID()
+			nodeId, err := validator.TestNodeID()
 			if err != nil {
 				return err
 			}

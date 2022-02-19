@@ -11,7 +11,7 @@ import (
 )
 
 // InitHomeFolder initializes a home folder for the given node
-func (n *Node) InitHomeFolder(ctx context.Context) error {
+func (n *TestNode) InitHomeFolder(ctx context.Context) error {
 	command := []string{n.ContainerConfig.Bin, "init", n.Name(),
 		"--chain-id", n.R.ChainId,
 		"--home", n.HomeDir(),
@@ -20,7 +20,7 @@ func (n *Node) InitHomeFolder(ctx context.Context) error {
 }
 
 // CreateKey creates a key in the keyring backend test for the given node
-func (n *Node) CreateKey(ctx context.Context, name string) error {
+func (n *TestNode) CreateKey(ctx context.Context, name string) error {
 	command := []string{n.ContainerConfig.Bin, "keys", "add", name,
 		"--keyring-backend", "test",
 		"--output", "json",
@@ -30,7 +30,7 @@ func (n *Node) CreateKey(ctx context.Context, name string) error {
 }
 
 // AddGenesisAccount adds a genesis account for each key
-func (n *Node) AddGenesisAccount(ctx context.Context, address string) error {
+func (n *TestNode) AddGenesisAccount(ctx context.Context, address string) error {
 	command := []string{n.ContainerConfig.Bin, "add-genesis-account", address, "1000000000000stake",
 		"--home", n.HomeDir(),
 	}
@@ -38,7 +38,7 @@ func (n *Node) AddGenesisAccount(ctx context.Context, address string) error {
 }
 
 // Gentx generates the gentx for a given node
-func (n *Node) Gentx(ctx context.Context, name string) error {
+func (n *TestNode) Gentx(ctx context.Context, name string) error {
 	command := []string{n.ContainerConfig.Bin, "gentx", VALIDATOR_KEY, "100000000000stake",
 		"--keyring-backend", "test",
 		"--home", n.HomeDir(),
@@ -48,14 +48,14 @@ func (n *Node) Gentx(ctx context.Context, name string) error {
 }
 
 // CollectGentxs runs collect gentxs on the node's home folders
-func (n *Node) CollectGentxs(ctx context.Context) error {
+func (n *TestNode) CollectGentxs(ctx context.Context) error {
 	command := []string{n.ContainerConfig.Bin, "collect-gentxs",
 		"--home", n.HomeDir(),
 	}
 	return n.Execute(ctx, command)
 }
 
-func (n *Node) Start(ctx context.Context) error {
+func (n *TestNode) Start(ctx context.Context) error {
 	if n.Container != nil {
 		return fmt.Errorf("failed to start node %s, already exists", n.Name())
 	}
@@ -71,7 +71,7 @@ func (n *Node) Start(ctx context.Context) error {
 	return err
 }
 
-func (n *Node) Stop(ctx context.Context) error {
+func (n *TestNode) Stop(ctx context.Context) error {
 	if n.Container == nil {
 		return fmt.Errorf("failed to stop node %s, does not exist", n.Name())
 	}
@@ -81,7 +81,7 @@ func (n *Node) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (n *Node) Run(ctx context.Context, cmd []string) (*dockertest.Resource, error) {
+func (n *TestNode) Run(ctx context.Context, cmd []string) (*dockertest.Resource, error) {
 	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
 	return n.R.Pool.RunWithOptions(&dockertest.RunOptions{
 		Name:         utils.RandLowerCaseLetterString(8),
@@ -102,7 +102,7 @@ func (n *Node) Run(ctx context.Context, cmd []string) (*dockertest.Resource, err
 	})
 }
 
-func (n *Node) Execute(ctx context.Context, cmd []string) error {
+func (n *TestNode) Execute(ctx context.Context, cmd []string) error {
 	resource, err := n.Run(ctx, cmd)
 	if err != nil {
 		return err

@@ -23,7 +23,7 @@ var (
 	VALIDATOR_KEY  = "validator"
 )
 
-type Node struct {
+type TestNode struct {
 	R               *TestChain
 	Id              int
 	ContainerConfig *ContainerConfig
@@ -32,8 +32,8 @@ type Node struct {
 	Client          *rpchttp.HTTP
 }
 
-func NewNode(r *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*Node, error) {
-	n := &Node{
+func NewTestNode(r *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*TestNode, error) {
+	n := &TestNode{
 		R:               r,
 		Id:              id,
 		ContainerConfig: containerConfig,
@@ -47,7 +47,7 @@ func NewNode(r *TestChain, id int, containerConfig *ContainerConfig, isValidator
 	return n, nil
 }
 
-func (n *Node) initHostEnv() error {
+func (n *TestNode) initHostEnv() error {
 	if err := os.MkdirAll(n.HostHomeDir(), 0755); err != nil {
 		return err
 	}
@@ -55,20 +55,20 @@ func (n *Node) initHostEnv() error {
 	return nil
 }
 
-func (n *Node) Name() string {
+func (n *TestNode) Name() string {
 	return fmt.Sprintf("node-%s-%d", n.R.T.Name(), n.Id)
 }
 
-func (n *Node) HostHomeDir() string {
+func (n *TestNode) HostHomeDir() string {
 	return filepath.Join(n.R.RootDataPath, n.Name())
 }
 
-func (n *Node) HomeDir() string {
+func (n *TestNode) HomeDir() string {
 	return filepath.Join("/home", n.ContainerConfig.Bin)
 }
 
 // Keybase returns the keyring for a given node
-func (n *Node) Keybase() (keyring.Keyring, error) {
+func (n *TestNode) Keybase() (keyring.Keyring, error) {
 	kr, err := keyring.New("", keyring.BackendTest, n.HostHomeDir(), os.Stdin)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (n *Node) Keybase() (keyring.Keyring, error) {
 }
 
 // GetKey gets a key, waiting until it is available
-func (n *Node) GetKey(name string) (info keyring.Info, err error) {
+func (n *TestNode) GetKey(name string) (info keyring.Info, err error) {
 	return info, retry.Do(func() (err error) {
 		kr, err := n.Keybase()
 		if err != nil {
@@ -88,7 +88,7 @@ func (n *Node) GetKey(name string) (info keyring.Info, err error) {
 	})
 }
 
-func (n *Node) Initialize(ctx context.Context) error {
+func (n *TestNode) Initialize(ctx context.Context) error {
 	if err := n.InitHomeFolder(ctx); err != nil {
 		return err
 	}
@@ -102,8 +102,8 @@ func (n *Node) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// NodeID returns the node of a given node
-func (n *Node) NodeID() (string, error) {
+// TestNodeID returns the node of a given node
+func (n *TestNode) TestNodeID() (string, error) {
 	nodeKey, err := p2p.LoadNodeKey(path.Join(n.HostHomeDir(), "config", "node_key.json"))
 	if err != nil {
 		return "", err
@@ -111,11 +111,11 @@ func (n *Node) NodeID() (string, error) {
 	return string(nodeKey.ID()), nil
 }
 
-func (n *Node) GenesisFilePath() string {
+func (n *TestNode) GenesisFilePath() string {
 	return path.Join(n.HostHomeDir(), "config", "genesis.json")
 }
 
-func (n *Node) CreateGenesisTx(ctx context.Context) error {
+func (n *TestNode) CreateGenesisTx(ctx context.Context) error {
 	key, err := n.GetKey(VALIDATOR_KEY)
 	if err != nil {
 		return err
@@ -131,19 +131,19 @@ func (n *Node) CreateGenesisTx(ctx context.Context) error {
 	return nil
 }
 
-func (n *Node) PeerString() (string, error) {
-	nodeID, err := n.NodeID()
+func (n *TestNode) PeerString() (string, error) {
+	nodeID, err := n.TestNodeID()
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%s@%s:26656", nodeID, n.Name()), nil
 }
 
-func (n *Node) TMConfigPath() string {
+func (n *TestNode) TMConfigPath() string {
 	return path.Join(n.HostHomeDir(), "config", "config.toml")
 }
 
-func (n *Node) SetValidatorConfig() error {
+func (n *TestNode) SetValidatorConfig() error {
 	config := tmconfig.DefaultConfig()
 
 	peers, err := n.R.PeerString()
@@ -176,8 +176,8 @@ func stdconfigchanges(cfg *tmconfig.Config, peers string) {
 	cfg.P2P.PersistentPeers = peers
 }
 
-// NewClient creates and assigns a new Tendermint RPC client to the TestNode
-func (n *Node) NewClient(addr string) error {
+// NewClient creates and assigns a new Tendermint RPC client to the TestTestNode
+func (n *TestNode) NewClient(addr string) error {
 	httpClient, err := libclient.DefaultHTTPClient(addr)
 	if err != nil {
 		return err
@@ -194,7 +194,7 @@ func (n *Node) NewClient(addr string) error {
 }
 
 // GetHostPort returns a resource's published port with an address.
-func (n *Node) GetHostPort(portID string) string {
+func (n *TestNode) GetHostPort(portID string) string {
 	if n.Container == nil || n.Container.NetworkSettings == nil {
 		return ""
 	}
@@ -211,7 +211,7 @@ func (n *Node) GetHostPort(portID string) string {
 	return net.JoinHostPort(ip, m[0].HostPort)
 }
 
-func (n *Node) SetupAndVerify(ctx context.Context) error {
+func (n *TestNode) SetupAndVerify(ctx context.Context) error {
 	hostPort := n.GetHostPort("26657/tcp")
 	n.R.T.Logf("{%s} RPC => %s", n.Name(), hostPort)
 
