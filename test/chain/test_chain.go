@@ -41,7 +41,7 @@ func NewTestChain(
 	pool *dockertest.Pool,
 	chainId string,
 ) (*TestChain, error) {
-	r := &TestChain{
+	c := &TestChain{
 		T:            t,
 		RootDataPath: "",
 		Pool:         pool,
@@ -52,25 +52,25 @@ func NewTestChain(
 
 		nextTestNodeId: 0,
 	}
-	if err := r.initHostEnv(ctx); err != nil {
+	if err := c.initHostEnv(ctx); err != nil {
 		return nil, err
 	}
-	return r, nil
+	return c, nil
 }
 
-func (r *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
-	node, err := NewTestNode(r, r.nextTestNodeId, containerConfig, isValidator)
+func (c *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
+	node, err := NewTestNode(c, c.nextTestNodeId, containerConfig, isValidator)
 	if err != nil {
 		return err
 	}
-	r.nextTestNodeId += 1
-	r.Nodes = append(r.Nodes, node)
+	c.nextTestNodeId += 1
+	c.Nodes = append(c.Nodes, node)
 	return nil
 }
 
-func (r *TestChain) CreateGenesis(ctx context.Context) error {
+func (c *TestChain) CreateGenesis(ctx context.Context) error {
 	validators := []*TestNode{}
-	for _, node := range r.Nodes {
+	for _, node := range c.Nodes {
 		if node.IsValidator {
 			validators = append(validators, node)
 		}
@@ -130,38 +130,38 @@ func (r *TestChain) CreateGenesis(ctx context.Context) error {
 		return err
 	}
 
-	for _, node := range r.Nodes {
+	for _, node := range c.Nodes {
 		if err := ioutil.WriteFile(node.GenesisFilePath(), genesis, 0644); err != nil {
 			return err
 		}
 	}
 
-	if err := r.LogGenesisHashes(); err != nil {
+	if err := c.LogGenesisHashes(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (r *TestChain) LogGenesisHashes() error {
-	for _, node := range r.Nodes {
+func (c *TestChain) LogGenesisHashes() error {
+	for _, node := range c.Nodes {
 		genesis, err := ioutil.ReadFile(node.GenesisFilePath())
 		if err != nil {
 			return err
 		}
-		r.T.Logf("{%s} genesis hash %x", node.Name(), sha256.Sum256(genesis))
+		c.T.Logf("{%s} genesis hash %x", node.Name(), sha256.Sum256(genesis))
 	}
 	return nil
 }
 
-func (r *TestChain) PeerString() (string, error) {
+func (c *TestChain) PeerString() (string, error) {
 	bldr := new(strings.Builder)
-	for _, node := range r.Nodes {
+	for _, node := range c.Nodes {
 		peerString, err := node.PeerString()
 		if err != nil {
 			return "", err
 		}
-		r.T.Logf("{%s} peering {%s}", node.Name(), peerString)
+		c.T.Logf("{%s} peering {%s}", node.Name(), peerString)
 		if _, err := bldr.WriteString(peerString + ","); err != nil {
 			return "", err
 		}
@@ -169,11 +169,11 @@ func (r *TestChain) PeerString() (string, error) {
 	return strings.TrimSuffix(bldr.String(), ","), nil
 }
 
-func (r *TestChain) Start(ctx context.Context) error {
+func (c *TestChain) Start(ctx context.Context) error {
 	eg := errgroup.Group{}
-	for _, node := range r.Nodes {
+	for _, node := range c.Nodes {
 		node := node
-		r.T.Logf("{%s} => starting container...", node.Name())
+		c.T.Logf("{%s} => starting container...", node.Name())
 		eg.Go(func() error {
 			if err := node.SetValidatorConfig(); err != nil {
 				return err
@@ -190,10 +190,10 @@ func (r *TestChain) Start(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (r *TestChain) WaitForHeight(ctx context.Context, height int64) error {
+func (c *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 	var eg errgroup.Group
-	r.T.Logf("Waiting For Nodes To Reach Block Height %d...", height)
-	for _, node := range r.Nodes {
+	c.T.Logf("Waiting For Nodes To Reach Block Height %d...", height)
+	for _, node := range c.Nodes {
 		node := node
 		eg.Go(func() error {
 			return retry.Do(func() error {
@@ -205,7 +205,7 @@ func (r *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 				if stat.SyncInfo.CatchingUp || stat.SyncInfo.LatestBlockHeight < height {
 					return fmt.Errorf("node still under block %d: %d", height, stat.SyncInfo.LatestBlockHeight)
 				}
-				r.T.Logf("{%s} => reached block %d\n", node.Name(), height)
+				c.T.Logf("{%s} => reached block %d\n", node.Name(), height)
 				return nil
 				// TODO: setup backup delay here
 			}, retry.DelayType(retry.BackOffDelay), retry.Attempts(15))
@@ -214,8 +214,8 @@ func (r *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 	return eg.Wait()
 }
 
-func (r *TestChain) initHostEnv(ctx context.Context) error {
-	if err := r.removeDockerArtifactsFromPreviousTest(); err != nil {
+func (c *TestChain) initHostEnv(ctx context.Context) error {
+	if err := c.removeDockerArtifactsFromPreviousTest(); err != nil {
 		return err
 	}
 
@@ -224,14 +224,14 @@ func (r *TestChain) initHostEnv(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.RootDataPath = rootDataPath
-	r.T.Log(rootDataPath)
+	c.RootDataPath = rootDataPath
+	c.T.Log(rootDataPath)
 
 	// Create docker network
-	network, err := r.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
+	network, err := c.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
 		Name:           NETWORK_NAME,
 		Options:        map[string]interface{}{},
-		Labels:         map[string]string{NETWORK_LABEL_KEY: r.T.Name()},
+		Labels:         map[string]string{NETWORK_LABEL_KEY: c.T.Name()},
 		CheckDuplicate: true,
 		Internal:       false,
 		EnableIPv6:     false,
@@ -240,39 +240,39 @@ func (r *TestChain) initHostEnv(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.Network = network
-	r.T.Cleanup(func() {
-		err = r.Pool.Client.RemoveNetwork(r.Network.ID)
+	c.Network = network
+	c.T.Cleanup(func() {
+		err = c.Pool.Client.RemoveNetwork(c.Network.ID)
 		if err != nil {
-			r.T.Logf("failed to remove docker network on test cleanup %+v", err)
+			c.T.Logf("failed to remove docker network on test cleanup %+v", err)
 		}
 	})
 
 	return nil
 }
 
-func (r *TestChain) removeDockerArtifactsFromPreviousTest() error {
+func (c *TestChain) removeDockerArtifactsFromPreviousTest() error {
 	containerFilter := map[string][]string{"network": {NETWORK_NAME}}
-	containers, err := r.Pool.Client.ListContainers(docker.ListContainersOptions{Filters: containerFilter})
+	containers, err := c.Pool.Client.ListContainers(docker.ListContainersOptions{Filters: containerFilter})
 	if err != nil {
 		return err
 	}
 	for _, container := range containers {
-		r.T.Logf("removing container %s %v from previous test", container.ID, container.Names)
+		c.T.Logf("removing container %s %v from previous test", container.ID, container.Names)
 		opts := docker.RemoveContainerOptions{ID: container.ID, Force: true}
-		if err := r.Pool.Client.RemoveContainer(opts); err != nil {
+		if err := c.Pool.Client.RemoveContainer(opts); err != nil {
 			return err
 		}
 	}
 
 	networkFilter := map[string]map[string]bool{"name": {NETWORK_NAME: true}}
-	networks, err := r.Pool.Client.FilteredListNetworks(networkFilter)
+	networks, err := c.Pool.Client.FilteredListNetworks(networkFilter)
 	if err != nil {
 		return err
 	}
 	for _, network := range networks {
-		r.T.Logf("removing network %s from previous test", network.Name)
-		if err := r.Pool.Client.RemoveNetwork(network.ID); err != nil {
+		c.T.Logf("removing network %s from previous test", network.Name)
+		if err := c.Pool.Client.RemoveNetwork(network.ID); err != nil {
 			return err
 		}
 	}
