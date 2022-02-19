@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -206,6 +207,19 @@ func (n *TestNode) WaitForHeight(ctx context.Context, height int64) error {
 		return nil
 		// TODO: setup backup delay here
 	}, retry.DelayType(retry.BackOffDelay), retry.Attempts(15))
+}
+
+func (n *TestNode) CopyGenesisFileFromNode(other *TestNode) error {
+	genesis, err := ioutil.ReadFile(other.GenesisFilePath())
+	if err != nil {
+		return err
+	}
+
+	if err := ioutil.WriteFile(n.GenesisFilePath(), genesis, 0644); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (n *TestNode) initHostEnv() error {
