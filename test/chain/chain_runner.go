@@ -1,4 +1,4 @@
-package util
+package chain
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/strangelove-ventures/ibc-test-framework/test/utils"
 )
 
 var (
@@ -22,7 +24,7 @@ var (
 	NETWORK_NAME      = "ibc-test-network"
 )
 
-type ChainRunner struct {
+type TestChain struct {
 	T            *testing.T
 	RootDataPath string
 	Pool         *dockertest.Pool
@@ -34,8 +36,8 @@ type ChainRunner struct {
 	nextNodeId int
 }
 
-func NewChainRunner(t *testing.T, ctx context.Context, chainId string) (*ChainRunner, error) {
-	r := &ChainRunner{
+func NewTestChain(t *testing.T, ctx context.Context, chainId string) (*TestChain, error) {
+	r := &TestChain{
 		T:            t,
 		RootDataPath: "",
 		Pool:         nil,
@@ -52,7 +54,7 @@ func NewChainRunner(t *testing.T, ctx context.Context, chainId string) (*ChainRu
 	return r, nil
 }
 
-func (r *ChainRunner) initHostEnv(ctx context.Context) error {
+func (r *TestChain) initHostEnv(ctx context.Context) error {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		return err
@@ -63,7 +65,7 @@ func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 		return err
 	}
 
-	rootDataPath, err := CreateTmpDir()
+	rootDataPath, err := utils.CreateTmpDir()
 	if err != nil {
 		return err
 	}
@@ -94,7 +96,7 @@ func (r *ChainRunner) initHostEnv(ctx context.Context) error {
 	return nil
 }
 
-func (r *ChainRunner) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
+func (r *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
 	node, err := NewNode(r, r.nextNodeId, containerConfig, isValidator)
 	if err != nil {
 		return err
@@ -104,7 +106,7 @@ func (r *ChainRunner) AddNode(containerConfig *ContainerConfig, isValidator bool
 	return nil
 }
 
-func (r *ChainRunner) CreateGenesis(ctx context.Context) error {
+func (r *TestChain) CreateGenesis(ctx context.Context) error {
 	validators := []*Node{}
 	for _, node := range r.Nodes {
 		if node.IsValidator {
@@ -179,7 +181,7 @@ func (r *ChainRunner) CreateGenesis(ctx context.Context) error {
 	return nil
 }
 
-func (r *ChainRunner) LogGenesisHashes() error {
+func (r *TestChain) LogGenesisHashes() error {
 	for _, node := range r.Nodes {
 		genesis, err := ioutil.ReadFile(node.GenesisFilePath())
 		if err != nil {
@@ -190,7 +192,7 @@ func (r *ChainRunner) LogGenesisHashes() error {
 	return nil
 }
 
-func (r *ChainRunner) PeerString() (string, error) {
+func (r *TestChain) PeerString() (string, error) {
 	bldr := new(strings.Builder)
 	for _, node := range r.Nodes {
 		peerString, err := node.PeerString()
@@ -205,7 +207,7 @@ func (r *ChainRunner) PeerString() (string, error) {
 	return strings.TrimSuffix(bldr.String(), ","), nil
 }
 
-func (r *ChainRunner) StartNodes(ctx context.Context) error {
+func (r *TestChain) StartNodes(ctx context.Context) error {
 	eg := errgroup.Group{}
 	for _, node := range r.Nodes {
 		node := node
@@ -226,7 +228,7 @@ func (r *ChainRunner) StartNodes(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (r *ChainRunner) WaitForHeight(ctx context.Context, height int64) error {
+func (r *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 	var eg errgroup.Group
 	r.T.Logf("Waiting For Nodes To Reach Block Height %d...", height)
 	for _, node := range r.Nodes {
@@ -250,7 +252,7 @@ func (r *ChainRunner) WaitForHeight(ctx context.Context, height int64) error {
 	return eg.Wait()
 }
 
-func (r *ChainRunner) removeDockerArtifactsFromPreviousTest() error {
+func (r *TestChain) removeDockerArtifactsFromPreviousTest() error {
 	containerFilter := map[string][]string{"network": {NETWORK_NAME}}
 	containers, err := r.Pool.Client.ListContainers(docker.ListContainersOptions{Filters: containerFilter})
 	if err != nil {

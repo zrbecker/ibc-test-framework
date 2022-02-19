@@ -1,4 +1,4 @@
-package util
+package chain
 
 type ContainerConfig struct {
 	Repository string

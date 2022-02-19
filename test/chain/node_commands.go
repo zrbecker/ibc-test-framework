@@ -1,4 +1,4 @@
-package util
+package chain
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
+	"github.com/strangelove-ventures/ibc-test-framework/test/utils"
 )
 
 // InitHomeFolder initializes a home folder for the given node
@@ -83,7 +84,7 @@ func (n *Node) Stop(ctx context.Context) error {
 func (n *Node) Run(ctx context.Context, cmd []string) (*dockertest.Resource, error) {
 	n.R.T.Logf("{%s}[%s] -> '%s'", n.Name(), "", strings.Join(cmd, " "))
 	return n.R.Pool.RunWithOptions(&dockertest.RunOptions{
-		Name:         RandLowerCaseLetterString(8),
+		Name:         utils.RandLowerCaseLetterString(8),
 		Hostname:     n.Name(),
 		Repository:   n.ContainerConfig.Repository,
 		Tag:          n.ContainerConfig.Version,

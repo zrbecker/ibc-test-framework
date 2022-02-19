@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/strangelove-ventures/ibc-test-framework/test/util"
+	"github.com/strangelove-ventures/ibc-test-framework/test/chain"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -12,11 +12,11 @@ import (
 func TestRun(t *testing.T) {
 	ctx := context.Background()
 
-	r, err := util.NewChainRunner(t, ctx, "ibc-test")
+	r, err := chain.NewTestChain(t, ctx, "ibc-test")
 	require.NoError(t, err, "failed to create ChainRunner")
 
 	for i := 0; i < 3; i += 1 {
-		err := r.AddNode(&util.GaiaContainerConfig, true /* isValidator */)
+		err := r.AddNode(&chain.GaiaContainerConfig, true /* isValidator */)
 		require.NoError(t, err, "failed to add node %d", i)
 	}
 

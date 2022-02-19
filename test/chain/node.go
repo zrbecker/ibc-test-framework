@@ -1,4 +1,4 @@
-package util
+package chain
 
 import (
 	"context"
@@ -24,7 +24,7 @@ var (
 )
 
 type Node struct {
-	R               *ChainRunner
+	R               *TestChain
 	Id              int
 	ContainerConfig *ContainerConfig
 	IsValidator     bool
@@ -32,7 +32,7 @@ type Node struct {
 	Client          *rpchttp.HTTP
 }
 
-func NewNode(r *ChainRunner, id int, containerConfig *ContainerConfig, isValidator bool) (*Node, error) {
+func NewNode(r *TestChain, id int, containerConfig *ContainerConfig, isValidator bool) (*Node, error) {
 	n := &Node{
 		R:               r,
 		Id:              id,
