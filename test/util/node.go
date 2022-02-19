@@ -101,6 +101,10 @@ func (n *Node) NodeID() (string, error) {
 	return string(nodeKey.ID()), nil
 }
 
+func (n *Node) GenesisFilePath() string {
+	return path.Join(n.HostHomeDir(), "config", "genesis.json")
+}
+
 func (n *Node) CreateGenesisTx(ctx context.Context) error {
 	key, err := n.GetKey(VALIDATOR_KEY)
 	if err != nil {

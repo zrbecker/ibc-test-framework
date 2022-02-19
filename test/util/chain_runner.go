@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -165,5 +166,31 @@ func (r *ChainRunner) CreateGenesis(ctx context.Context) error {
 		return err
 	}
 
+	genesis, err := ioutil.ReadFile(genValidator.GenesisFilePath())
+	if err != nil {
+		return err
+	}
+
+	for _, node := range r.Nodes {
+		if err := ioutil.WriteFile(node.GenesisFilePath(), genesis, 0644); err != nil {
+			return err
+		}
+	}
+
+	if err := r.LogGenesisHashes(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r ChainRunner) LogGenesisHashes() error {
+	for _, node := range r.Nodes {
+		genesis, err := ioutil.ReadFile(node.GenesisFilePath())
+		if err != nil {
+			return err
+		}
+		r.T.Logf("{%s} genesis hash %x", node.Name(), sha256.Sum256(genesis))
+	}
 	return nil
 }
