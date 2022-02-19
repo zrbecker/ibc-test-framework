@@ -36,11 +36,15 @@ type TestChain struct {
 	nextTestNodeId int
 }
 
-func NewTestChain(t *testing.T, ctx context.Context, chainId string) (*TestChain, error) {
+func NewTestChain(
+	t *testing.T, ctx context.Context,
+	pool *dockertest.Pool,
+	chainId string,
+) (*TestChain, error) {
 	r := &TestChain{
 		T:            t,
 		RootDataPath: "",
-		Pool:         nil,
+		Pool:         pool,
 		Network:      nil,
 
 		ChainId: chainId,
@@ -52,48 +56,6 @@ func NewTestChain(t *testing.T, ctx context.Context, chainId string) (*TestChain
 		return nil, err
 	}
 	return r, nil
-}
-
-func (r *TestChain) initHostEnv(ctx context.Context) error {
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		return err
-	}
-	r.Pool = pool
-
-	if err := r.removeDockerArtifactsFromPreviousTest(); err != nil {
-		return err
-	}
-
-	rootDataPath, err := utils.CreateTmpDir()
-	if err != nil {
-		return err
-	}
-	r.RootDataPath = rootDataPath
-	r.T.Log(rootDataPath)
-
-	// Create docker network
-	network, err := r.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
-		Name:           NETWORK_NAME,
-		Options:        map[string]interface{}{},
-		Labels:         map[string]string{NETWORK_LABEL_KEY: r.T.Name()},
-		CheckDuplicate: true,
-		Internal:       false,
-		EnableIPv6:     false,
-		Context:        ctx,
-	})
-	if err != nil {
-		return err
-	}
-	r.Network = network
-	r.T.Cleanup(func() {
-		err = r.Pool.Client.RemoveNetwork(r.Network.ID)
-		if err != nil {
-			r.T.Logf("failed to remove docker network on test cleanup %+v", err)
-		}
-	})
-
-	return nil
 }
 
 func (r *TestChain) AddNode(containerConfig *ContainerConfig, isValidator bool) error {
@@ -207,7 +169,7 @@ func (r *TestChain) PeerString() (string, error) {
 	return strings.TrimSuffix(bldr.String(), ","), nil
 }
 
-func (r *TestChain) StartNodes(ctx context.Context) error {
+func (r *TestChain) Start(ctx context.Context) error {
 	eg := errgroup.Group{}
 	for _, node := range r.Nodes {
 		node := node
@@ -250,6 +212,43 @@ func (r *TestChain) WaitForHeight(ctx context.Context, height int64) error {
 		})
 	}
 	return eg.Wait()
+}
+
+func (r *TestChain) initHostEnv(ctx context.Context) error {
+	if err := r.removeDockerArtifactsFromPreviousTest(); err != nil {
+		return err
+	}
+
+	// Create tmp directory for docker container mounts
+	rootDataPath, err := utils.CreateTmpDir()
+	if err != nil {
+		return err
+	}
+	r.RootDataPath = rootDataPath
+	r.T.Log(rootDataPath)
+
+	// Create docker network
+	network, err := r.Pool.Client.CreateNetwork(docker.CreateNetworkOptions{
+		Name:           NETWORK_NAME,
+		Options:        map[string]interface{}{},
+		Labels:         map[string]string{NETWORK_LABEL_KEY: r.T.Name()},
+		CheckDuplicate: true,
+		Internal:       false,
+		EnableIPv6:     false,
+		Context:        ctx,
+	})
+	if err != nil {
+		return err
+	}
+	r.Network = network
+	r.T.Cleanup(func() {
+		err = r.Pool.Client.RemoveNetwork(r.Network.ID)
+		if err != nil {
+			r.T.Logf("failed to remove docker network on test cleanup %+v", err)
+		}
+	})
+
+	return nil
 }
 
 func (r *TestChain) removeDockerArtifactsFromPreviousTest() error {
